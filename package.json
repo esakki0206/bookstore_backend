@@ -1,0 +1,43 @@
+{
+  "name": "saree-store-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Saree E-Commerce Platform",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed:admin": "node src/utils/seedAdmin.js",
+    "admin:setup": "node src/utils/adminManager.js seed",
+    "admin:create": "cd src/utils && node adminManager.js create",
+    "admin:list": "cd src/utils && node adminManager.js list",
+    "admin:reset": "cd src/utils && node adminManager.js reset",
+    "admin:delete": "cd src/utils && node adminManager.js delete",
+    "admin:check": "cd src/utils && node adminManager.js check",
+    "admin:verify": "cd src/utils && node adminManager.js verify",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "saree",
+    "ecommerce",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.5.0",
+    "multer": "^1.4.5-lts.1",
+    "multer-storage-cloudinary": "^2.2.1",
+    "nodemailer": "^7.0.12",
+    "razorpay": "^2.9.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
