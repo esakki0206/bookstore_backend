@@ -24,7 +24,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const { items, shippingAddress, paymentMethod, couponCode } = req.body;
   const userRole = req.user.role;
 
-  // ❌ STRICT VALIDATION: Block COD
+  // ✅ STRICT VALIDATION: Block COD
   if (paymentMethod === 'cod') {
     throw new AppError(400, 'Cash on Delivery is currently unavailable. Please use online payment.');
   }
@@ -159,12 +159,17 @@ exports.createOrder = asyncHandler(async (req, res) => {
 });
 
 // @desc    Update order status (Admin)
+// @route   PUT /api/admin/orders/:id/status
+// @access  Private (Admin)
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const { status, note, courierName, trackingId } = req.body;
 
   const order = await Order.findById(req.params.id).populate('user', 'name email');
   if (!order) throw new AppError(404, 'Order not found');
 
+  // Store old status for logging
+  const oldStatus = order.status;
+  
   order.status = status;
   let statusNote = note || `Status updated to ${status}`;
   
@@ -187,24 +192,76 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   order.statusHistory.push({ status, note: statusNote });
   await order.save();
 
-  // Send Emails
+  // ✅ FIXED: Send Emails Based on Status - ALWAYS TRY TO SEND
+  let emailSent = false;
+  let emailError = null;
+  
   try {
-    if (status === 'shipped' && !order.emailNotifications.shippedSent) {
-      await sendOrderShipped(order);
-      order.emailNotifications.shippedSent = true;
-      order.emailNotifications.shippedSentAt = new Date();
-      await order.save();
-    } else if (status === 'delivered' && !order.emailNotifications.deliveredSent) {
-      await sendOrderDelivered(order);
-      order.emailNotifications.deliveredSent = true;
-      order.emailNotifications.deliveredSentAt = new Date();
+    if (status === 'shipped') {
+      console.log(`📧 Attempting to send SHIPPED email for order ${order.orderNumber}...`);
+      const result = await sendOrderShipped(order);
+      
+      if (result && result.success) {
+        order.emailNotifications.shippedSent = true;
+        order.emailNotifications.shippedSentAt = new Date();
+        emailSent = true;
+        console.log(`✅ Shipped email sent successfully for order ${order.orderNumber}`);
+      } else {
+        emailError = result?.error || 'Unknown error';
+        console.error(`❌ Failed to send shipped email for order ${order.orderNumber}:`, emailError);
+      }
+      
+    } else if (status === 'delivered') {
+      console.log(`📧 Attempting to send DELIVERED email for order ${order.orderNumber}...`);
+      const result = await sendOrderDelivered(order);
+      
+      if (result && result.success) {
+        order.emailNotifications.deliveredSent = true;
+        order.emailNotifications.deliveredSentAt = new Date();
+        emailSent = true;
+        console.log(`✅ Delivered email sent successfully for order ${order.orderNumber}`);
+      } else {
+        emailError = result?.error || 'Unknown error';
+        console.error(`❌ Failed to send delivered email for order ${order.orderNumber}:`, emailError);
+      }
+      
+    } else if (status === 'confirmed' || status === 'processing') {
+      // Optionally send confirmation email when confirming order
+      if (!order.emailNotifications.confirmationSent) {
+        console.log(`📧 Attempting to send CONFIRMATION email for order ${order.orderNumber}...`);
+        const result = await sendOrderConfirmation(order);
+        
+        if (result && result.success) {
+          order.emailNotifications.confirmationSent = true;
+          order.emailNotifications.confirmationSentAt = new Date();
+          emailSent = true;
+          console.log(`✅ Confirmation email sent successfully for order ${order.orderNumber}`);
+        } else {
+          emailError = result?.error || 'Unknown error';
+          console.error(`❌ Failed to send confirmation email for order ${order.orderNumber}:`, emailError);
+        }
+      }
+    }
+    
+    // Save email notification updates
+    if (emailSent) {
       await order.save();
     }
-  } catch (emailError) {
-    console.error('Failed to send status update email:', emailError);
+    
+  } catch (emailException) {
+    // Log but don't fail the status update
+    console.error(`❌ Email sending exception for order ${order.orderNumber}:`, emailException);
+    emailError = emailException.message;
   }
 
-  res.json({ success: true, message: 'Order status updated', order });
+  // Return response with email status
+  res.json({ 
+    success: true, 
+    message: `Order status updated from ${oldStatus} to ${status}`,
+    emailStatus: emailSent ? 'sent' : 'failed',
+    emailError: emailError || undefined,
+    order 
+  });
 });
 
 exports.getUserOrders = asyncHandler(async (req, res) => {
@@ -291,19 +348,18 @@ exports.cancelOrder = asyncHandler(async (req, res) => {
   await order.save();
 
   for (const item of order.items) {
-   const product = await Product.findById(item.product);
+    const product = await Product.findById(item.product);
 
-product.stock += item.quantity;
+    product.stock += item.quantity;
 
-if (item.selectedColor) {
-  const variant = product.variants.find(v => v.colorName === item.selectedColor);
-  if (variant) {
-    variant.stock += item.quantity;
-  }
-}
+    if (item.selectedColor) {
+      const variant = product.variants.find(v => v.colorName === item.selectedColor);
+      if (variant) {
+        variant.stock += item.quantity;
+      }
+    }
 
-await product.save();
-
+    await product.save();
   }
 
   res.json({
@@ -367,6 +423,7 @@ exports.addOrderNote = asyncHandler(async (req, res) => {
 
 exports.getOrders = exports.getUserOrders;
 
+// ✅ FIXED: Resend Email Function
 exports.resendOrderEmail = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -381,38 +438,67 @@ exports.resendOrderEmail = asyncHandler(async (req, res) => {
     throw new AppError(404, 'Order not found');
   }
 
+  console.log(`📧 Attempting to resend ${emailType} email for order ${order.orderNumber}...`);
+
   let emailResult;
 
   try {
     switch (emailType) {
       case 'confirmation':
         emailResult = await sendOrderConfirmation(order);
-        order.emailNotifications.confirmationSent = true;
-        order.emailNotifications.confirmationSentAt = new Date();
+        if (emailResult && emailResult.success) {
+          order.emailNotifications.confirmationSent = true;
+          order.emailNotifications.confirmationSentAt = new Date();
+          console.log(`✅ Confirmation email resent successfully for order ${order.orderNumber}`);
+        }
         break;
+        
       case 'shipped':
         emailResult = await sendOrderShipped(order);
-        order.emailNotifications.shippedSent = true;
-        order.emailNotifications.shippedSentAt = new Date();
+        if (emailResult && emailResult.success) {
+          order.emailNotifications.shippedSent = true;
+          order.emailNotifications.shippedSentAt = new Date();
+          console.log(`✅ Shipped email resent successfully for order ${order.orderNumber}`);
+        }
         break;
+        
       case 'delivered':
         emailResult = await sendOrderDelivered(order);
-        order.emailNotifications.deliveredSent = true;
-        order.emailNotifications.deliveredSentAt = new Date();
+        if (emailResult && emailResult.success) {
+          order.emailNotifications.deliveredSent = true;
+          order.emailNotifications.deliveredSentAt = new Date();
+          console.log(`✅ Delivered email resent successfully for order ${order.orderNumber}`);
+        }
         break;
+        
       default:
         throw new AppError(400, 'Invalid email type');
+    }
+
+    // Check if email was successful
+    if (!emailResult || !emailResult.success) {
+      const errorMsg = emailResult?.error || 'Email service returned failure';
+      console.error(`❌ Failed to send ${emailType} email:`, errorMsg);
+      throw new AppError(500, `Failed to send ${emailType} email: ${errorMsg}`);
     }
 
     await order.save();
 
     res.json({
       success: true,
-      message: `${emailType} email sent successfully`,
+      message: `${emailType} email sent successfully to ${order.customerEmail}`,
       result: emailResult
     });
+    
   } catch (emailError) {
-    console.error(`Failed to send ${emailType} email:`, emailError);
-    throw new AppError(500, `Failed to send ${emailType} email`);
+    console.error(`❌ Failed to send ${emailType} email:`, emailError);
+    
+    // If it's already an AppError, rethrow it
+    if (emailError instanceof AppError) {
+      throw emailError;
+    }
+    
+    // Otherwise create a new AppError with the details
+    throw new AppError(500, `Failed to send ${emailType} email: ${emailError.message}`);
   }
 });

@@ -12,27 +12,74 @@ const emailConfig = {
   }
 };
 
+// ✅ IMPROVED: Better transporter creation with validation
 const createTransporter = () => {
+  // Validate email configuration
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+    console.error('❌ EMAIL CONFIGURATION ERROR: EMAIL_USER and EMAIL_PASSWORD must be set in environment variables');
+    throw new Error('Email configuration is incomplete. Please set EMAIL_USER and EMAIL_PASSWORD.');
+  }
+
+  console.log(`📧 Creating email transporter with service: ${process.env.EMAIL_SERVICE || 'gmail'}`);
+  console.log(`📧 Email user: ${process.env.EMAIL_USER}`);
+
+  // ✅ FIX: Check if nodemailer is properly loaded
+  if (typeof nodemailer.createTransport !== 'function') {
+    console.error('❌ nodemailer.createTransport is not a function. Nodemailer may not be installed correctly.');
+    console.error('Run: npm install nodemailer');
+    throw new Error('Nodemailer not properly installed');
+  }
+
   if (process.env.EMAIL_SERVICE === 'sendgrid') {
+    if (!process.env.SENDGRID_API_KEY) {
+      throw new Error('SENDGRID_API_KEY is required when using SendGrid');
+    }
     return nodemailer.createTransport({
-      host: 'smtp.sendgrid.net', port: 587, secure: false,
-      auth: { user: 'apikey', pass: process.env.SENDGRID_API_KEY }
+      host: 'smtp.sendgrid.net', 
+      port: 587, 
+      secure: false,
+      auth: { 
+        user: 'apikey', 
+        pass: process.env.SENDGRID_API_KEY 
+      }
     });
   }
+  
   if (process.env.EMAIL_SERVICE === 'smtp') {
+    if (!process.env.SMTP_HOST) {
+      throw new Error('SMTP_HOST is required when using SMTP service');
+    }
     return nodemailer.createTransport({
-      host: process.env.SMTP_HOST, port: process.env.SMTP_PORT || 587,
+      host: process.env.SMTP_HOST, 
+      port: process.env.SMTP_PORT || 587,
       secure: process.env.SMTP_SECURE === 'true',
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASSWORD }
+      auth: { 
+        user: process.env.EMAIL_USER, 
+        pass: process.env.EMAIL_PASSWORD 
+      }
     });
   }
+  
+  // Default to Gmail
   return nodemailer.createTransport({
     service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASSWORD }
+    auth: { 
+      user: process.env.EMAIL_USER, 
+      pass: process.env.EMAIL_PASSWORD 
+    }
   });
 };
 
-const transporter = createTransporter();
+let transporter;
+try {
+  transporter = createTransporter();
+  console.log('✅ Email transporter created successfully');
+} catch (error) {
+  console.error('❌ Failed to create email transporter:', error.message);
+  // Create a dummy transporter that will fail gracefully
+  transporter = null;
+}
+
 const formatCurrency = (amount) => `₹${amount.toLocaleString('en-IN')}`;
 
 // --- Helper: Generate Product Table HTML ---
@@ -83,7 +130,6 @@ const generateOrderTable = (order) => {
 };
 
 // --- Templates ---
-
 const emailTemplates = {
   
   // 1. Order Confirmation
@@ -92,7 +138,7 @@ const emailTemplates = {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; background-color: #ffffff;">
         <div style="background-color: #1a1a1a; padding: 20px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-family: serif; font-size: 24px;">Sri Sai Stores</h1>
+          <h1 style="color: #ffffff; margin: 0; font-family: serif; font-size: 24px;">Book Store</h1>
         </div>
         <div style="padding: 30px;">
           <h2 style="color: #333; margin-top: 0;">Thank you for your order!</h2>
@@ -120,7 +166,7 @@ const emailTemplates = {
           </div>
         </div>
         <div style="background-color: #f4f4f4; padding: 15px; text-align: center; font-size: 12px; color: #888;">
-          &copy; ${new Date().getFullYear()} Sri Sai Stores Collections. All rights reserved.
+          &copy; ${new Date().getFullYear()} BookStore Collections. All rights reserved.
         </div>
       </div>
     `
@@ -132,7 +178,7 @@ const emailTemplates = {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; background-color: #ffffff;">
         <div style="background-color: #1a1a1a; padding: 20px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-family: serif; font-size: 24px;">Sri Sai Stores</h1>
+          <h1 style="color: #ffffff; margin: 0; font-family: serif; font-size: 24px;">Book Store</h1>
         </div>
         
         <div style="padding: 30px;">
@@ -169,7 +215,7 @@ const emailTemplates = {
           </p>
         </div>
         <div style="background-color: #f4f4f4; padding: 15px; text-align: center; font-size: 12px; color: #888;">
-          &copy; ${new Date().getFullYear()} Sri Sai Stores Collections.
+          &copy; ${new Date().getFullYear()} Book Store Collections.
         </div>
       </div>
     `
@@ -181,7 +227,7 @@ const emailTemplates = {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; background-color: #ffffff;">
         <div style="background-color: #1a1a1a; padding: 20px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-family: serif; font-size: 24px;">Sri Sai Stores</h1>
+          <h1 style="color: #ffffff; margin: 0; font-family: serif; font-size: 24px;"Book Store</h1>
         </div>
         <div style="padding: 30px;">
           <div style="text-align: center; margin-bottom: 20px;">
@@ -207,7 +253,7 @@ const emailTemplates = {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; background-color: #ffffff;">
         <div style="background-color: #1a1a1a; padding: 20px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-family: serif; font-size: 24px;">Sri Sai Stores</h1>
+          <h1 style="color: #ffffff; margin: 0; font-family: serif; font-size: 24px;">Book Store</h1>
         </div>
         <div style="padding: 30px;">
           <h2 style="color: #d32f2f; margin-top: 0;">Order Cancelled</h2>
@@ -266,30 +312,109 @@ const emailTemplates = {
   }),
 };
 
-// --- Sending Logic ---
+// ✅ IMPROVED: Enhanced sending logic with better error handling
 const sendEmail = async (to, template, data) => {
+  // Check if transporter is available
+  if (!transporter) {
+    const error = 'Email transporter not initialized. Check EMAIL_USER and EMAIL_PASSWORD environment variables.';
+    console.error(`❌ ${error}`);
+    return { success: false, error };
+  }
+
+  // Validate recipient email
+  if (!to || typeof to !== 'string' || !to.includes('@')) {
+    const error = `Invalid recipient email: ${to}`;
+    console.error(`❌ ${error}`);
+    return { success: false, error };
+  }
+
   try {
+    console.log(`📧 Preparing to send ${template} email to ${to}...`);
+    
     const emailData = emailTemplates[template](data);
+    
+    if (!emailData) {
+      const error = `Email template "${template}" not found`;
+      console.error(`❌ ${error}`);
+      return { success: false, error };
+    }
+
     const mailOptions = {
-      from: { name: process.env.EMAIL_FROM_NAME || 'Sri Sai Stores', address: process.env.EMAIL_USER },
+      from: { 
+        name: process.env.EMAIL_FROM_NAME || 'Book Store Collections', 
+        address: process.env.EMAIL_USER 
+      },
       to, 
       subject: emailData.subject, 
       html: emailData.html
     };
-    await transporter.sendMail(mailOptions);
-    return { success: true };
+
+    console.log(`📧 Sending email with subject: "${emailData.subject}"`);
+    
+    const info = await transporter.sendMail(mailOptions);
+    
+    console.log(`✅ Email sent successfully! Message ID: ${info.messageId}`);
+    
+    return { 
+      success: true, 
+      messageId: info.messageId,
+      response: info.response 
+    };
+    
   } catch (error) {
-    console.error('Email error:', error);
-    return { success: false, error: error.message };
+    console.error(`❌ Email error for ${template} to ${to}:`, error.message);
+    console.error('Full error:', error);
+    
+    return { 
+      success: false, 
+      error: error.message,
+      code: error.code,
+      command: error.command 
+    };
   }
 };
 
+// ✅ Export functions with proper error handling
 module.exports = {
   sendEmail,
-  sendOrderConfirmation: (order) => sendEmail(order.user?.email || order.customerEmail, 'orderConfirmation', order),
-  sendPaymentConfirmed: (order) => sendEmail(order.user?.email || order.customerEmail, 'paymentConfirmed', order),
-  sendOrderShipped: (order) => sendEmail(order.user?.email || order.customerEmail, 'orderShipped', order),
-  sendOrderDelivered: (order) => sendEmail(order.user?.email || order.customerEmail, 'orderDelivered', order),
-  sendOrderCancelled: (order) => sendEmail(order.user?.email || order.customerEmail, 'orderCancelled', order),
-  sendAdminNotification: (order) => sendEmail(process.env.ADMIN_EMAIL, 'adminNotification', order)
+  
+  sendOrderConfirmation: async (order) => {
+    const email = order.user?.email || order.customerEmail;
+    console.log(`📧 sendOrderConfirmation called for order ${order.orderNumber} to ${email}`);
+    return sendEmail(email, 'orderConfirmation', order);
+  },
+  
+  sendPaymentConfirmed: async (order) => {
+    const email = order.user?.email || order.customerEmail;
+    console.log(`📧 sendPaymentConfirmed called for order ${order.orderNumber} to ${email}`);
+    return sendEmail(email, 'paymentConfirmed', order);
+  },
+  
+  sendOrderShipped: async (order) => {
+    const email = order.user?.email || order.customerEmail;
+    console.log(`📧 sendOrderShipped called for order ${order.orderNumber} to ${email}`);
+    return sendEmail(email, 'orderShipped', order);
+  },
+  
+  sendOrderDelivered: async (order) => {
+    const email = order.user?.email || order.customerEmail;
+    console.log(`📧 sendOrderDelivered called for order ${order.orderNumber} to ${email}`);
+    return sendEmail(email, 'orderDelivered', order);
+  },
+  
+  sendOrderCancelled: async (order) => {
+    const email = order.user?.email || order.customerEmail;
+    console.log(`📧 sendOrderCancelled called for order ${order.orderNumber} to ${email}`);
+    return sendEmail(email, 'orderCancelled', order);
+  },
+  
+  sendAdminNotification: async (order) => {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!adminEmail) {
+      console.warn('⚠️  ADMIN_EMAIL not set in environment variables, skipping admin notification');
+      return { success: false, error: 'ADMIN_EMAIL not configured' };
+    }
+    console.log(`📧 sendAdminNotification called for order ${order.orderNumber} to ${adminEmail}`);
+    return sendEmail(adminEmail, 'adminNotification', order);
+  }
 };
